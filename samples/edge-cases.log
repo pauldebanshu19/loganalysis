@@ -1,0 +1,11 @@
+2026-09-18 10:23:45 ERROR payment-service Connection timeout after 30s
+
+2026-09-18	10:23:46	INFO	auth-service	tab separated fields
+2026-09-18    10:23:47    WARN    auth-service    repeated spaces
+2026-09-18 10:23:48 FATAL payment-service
+2026-02-30 25:10:00 ERROR payment-service impossible date and time
+2026-09-18 10:23:49 WARNING auth-service level outside the five
+2026-09-18 10:23:50 error auth-service lowercase level
+ERROR billing-service No Auth token
+2026-09-18 10:23:51 ERROR
+2026-09-18 10:23:52 INFO Payment-Service case sensitive service name

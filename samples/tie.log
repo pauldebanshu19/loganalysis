@@ -1,0 +1,8 @@
+2026-09-18 09:00:01 INFO auth-service Service started
+2026-09-18 09:00:05 ERROR payment-service Card declined by issuer
+2026-09-18 09:00:07 ERROR billing-service Ledger write failed
+2026-09-18 09:00:09 ERROR payment-service Fraud check service unavailable
+2026-09-18 09:00:12 FATAL billing-service Ledger database unreachable, exiting
+2026-09-18 09:00:15 INFO auth-service Token refreshed for user 5531
+2026-09-18 09:00:18 ERROR payment-service Settlement batch rejected
+2026-09-18 09:00:20 ERROR billing-service Ledger write failed after restart

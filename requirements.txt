@@ -1,0 +1,20 @@
+# API server
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.5
+streaming-form-data>=1.19
+prometheus-client>=0.21
+# Only loaded when REDIS_URL is set.
+redis>=5.2
+
+# Command-line client
+httpx>=0.28
+typer>=0.15
+rich>=13.9
+
+# Tests
+pytest>=8.3
+pytest-asyncio>=0.24
+hypothesis>=6.112
+fakeredis>=2.26

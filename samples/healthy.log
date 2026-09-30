@@ -1,0 +1,12 @@
+2026-09-18 08:00:00 INFO api-gateway Listening on :8080
+2026-09-18 08:00:01 INFO auth-service Service started
+2026-09-18 08:00:01 INFO payment-service Service started
+2026-09-18 08:00:02 INFO inventory-service Service started
+2026-09-18 08:05:12 DEBUG auth-service Token validated for user 1042 in 2ms
+2026-09-18 08:05:12 INFO auth-service User 1042 logged in
+2026-09-18 08:05:40 INFO api-gateway GET /products 200 in 38ms
+2026-09-18 08:06:03 INFO payment-service Charge ch_7001 authorised for order 50001
+2026-09-18 08:06:03 DEBUG inventory-service Reserved 1 unit of SKU-2210 for order 50001
+2026-09-18 08:07:30 WARN inventory-service Low stock for SKU-2210 (4 left)
+2026-09-18 08:09:15 WARN api-gateway Slow response from payment-service: 1240ms
+2026-09-18 08:10:00 INFO auth-service User 1042 logged out

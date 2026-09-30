@@ -1,0 +1,48 @@
+2026-09-18 14:00:02 INFO api-gateway Listening on :8080, 6 upstream services registered
+2026-09-18 14:00:05 INFO auth-service Service started (version 4.2.1)
+2026-09-18 14:00:05 INFO payment-service Service started (version 7.0.3), DB pool size 20
+2026-09-18 14:00:06 INFO billing-service Service started (version 2.9.0)
+2026-09-18 14:00:06 INFO inventory-service Service started (version 3.1.4)
+2026-09-18 14:00:07 INFO notification-service Service started (version 1.8.2)
+2026-09-18 14:01:10 DEBUG auth-service Token validated for user 1042 in 3ms
+2026-09-18 14:01:12 INFO auth-service User 1042 logged in
+2026-09-18 14:01:15 INFO api-gateway POST /checkout 200 in 184ms
+2026-09-18 14:01:15 INFO payment-service Charge ch_8812 authorised for order 55120
+2026-09-18 14:01:16 INFO billing-service Invoice INV-30017 created for order 55120
+2026-09-18 14:01:16 DEBUG inventory-service Reserved 2 units of SKU-4471 for order 55120
+2026-09-18 14:01:17 INFO notification-service Order confirmation queued for order 55120
+2026-09-18 14:03:40 WARN payment-service DB pool usage at 85% (17/20 connections)
+2026-09-18 14:03:52 WARN payment-service DB pool usage at 100% (20/20 connections)
+2026-09-18 14:03:58 ERROR payment-service Timed out after 30000ms waiting for a DB connection
+java.sql.SQLTransientConnectionException: HikariPool-1 - Connection is not available, request timed out after 30000ms.
+	at com.zaxxer.hikari.pool.HikariPool.createTimeoutException(HikariPool.java:696)
+	at com.example.payments.ChargeService.charge(ChargeService.java:88)
+2026-09-18 14:03:58 ERROR api-gateway POST /checkout 504 upstream payment-service timed out
+2026-09-18 14:03:59 ERROR billing-service Charge failed for order 55131: payment-service unavailable
+2026-09-18 14:04:02 INFO auth-service User 2210 logged in
+2026-09-18 14:04:05 ERROR payment-service Timed out after 30000ms waiting for a DB connection
+2026-09-18 14:04:05 ERROR api-gateway POST /checkout 504 upstream payment-service timed out
+2026-09-18 14:04:06 WARN inventory-service Reservation for order 55134 released after payment failure
+2026-09-18 14:04:11 ERROR payment-service Timed out after 30000ms waiting for a DB connection
+2026-09-18 14:04:11 ERROR billing-service Charge failed for order 55138: payment-service unavailable
+2026-09-18 14:04:15 WARNING notification-service SMTP relay slow, 240 messages queued
+2026-09-18 14:04:20 ERROR payment-service Circuit breaker OPEN for payments-db after 5 failures
+2026-09-18 14:04:20 WARN api-gateway Circuit open for payment-service, failing fast
+2026-09-18 14:04:21 ERROR api-gateway POST /checkout 503 payment-service circuit open
+2026-09-18 14:04:25 FATAL payment-service Worker pool exhausted, process exiting
+2026-09-18 14:04:2
+2026-09-18 14:04:26 ERROR api-gateway POST /checkout 502 no healthy payment-service instances
+2026-09-18 14:04:30 ERROR notification-service Failed to send confirmation for order 55131: SMTP timeout
+2026-09-18 14:04:31 ERROR billing-service Charge failed for order 55140: payment-service unavailable
+2026-09-18 14:05:02 INFO payment-service Service started (version 7.0.3), DB pool size 20
+2026-09-18 14:05:10 INFO payment-service Circuit breaker HALF-OPEN, sending trial request
+2026-09-18 14:05:11 INFO payment-service Circuit breaker CLOSED, payments-db healthy
+2026-09-18 14:05:15 INFO api-gateway POST /checkout 200 in 211ms
+2026-09-18 14:05:15 INFO payment-service Charge ch_8840 authorised for order 55145
+2026-09-18 14:05:16 INFO billing-service Invoice INV-30031 created for order 55145
+2026-09-18 14:05:16 DEBUG inventory-service Reserved 1 unit of SKU-0093 for order 55145
+2026-09-18 14:05:17 INFO notification-service Order confirmation queued for order 55145
+2026-09-18 14:06:00 INFO billing-service Retrying 3 failed charges from 14:03 to 14:05
+2026-09-18 14:06:02 WARN billing-service Order 55131 still unpaid after retry, flagged for review
+2026-09-18 14:06:30 INFO notification-service SMTP queue drained
+2026-09-18 14:07:00 INFO auth-service User 1042 logged out
