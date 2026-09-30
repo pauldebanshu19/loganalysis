@@ -14,26 +14,27 @@ processed, and how many could not be parsed. It has three parts:
 | 3. Client | [`client/logscan.py`](client/logscan.py) | A command-line program. Reads a log file from disk, sends it to the server, prints a readable summary. |
 
 How the parts fit together, and why they are built the way they are, is covered
-in [ARCHITECTURE.md](ARCHITECTURE.md).
+in [System architecture](#system-architecture).
 
 ## Contents
 
 1. [Features](#features)
-2. [Requirements](#requirements)
-3. [Installation](#installation)
-4. [Running the server](#running-the-server)
-5. [Using the client](#using-the-client)
-6. [Demo: what to show in the terminal](#demo-what-to-show-in-the-terminal)
-7. [HTTP API reference](#http-api-reference)
-8. [How log lines are parsed](#how-log-lines-are-parsed)
-9. [How the summary is calculated](#how-the-summary-is-calculated)
-10. [Design decisions](#design-decisions)
-11. [Configuration](#configuration)
-12. [Sample log files](#sample-log-files)
-13. [Running the tests](#running-the-tests)
-14. [Project layout](#project-layout)
-15. [Troubleshooting](#troubleshooting)
-16. [Known limitations](#known-limitations)
+2. [System architecture](#system-architecture)
+3. [Requirements](#requirements)
+4. [Installation](#installation)
+5. [Running the server](#running-the-server)
+6. [Using the client](#using-the-client)
+7. [Demo: what to show in the terminal](#demo-what-to-show-in-the-terminal)
+8. [HTTP API reference](#http-api-reference)
+9. [How log lines are parsed](#how-log-lines-are-parsed)
+10. [How the summary is calculated](#how-the-summary-is-calculated)
+11. [Design decisions](#design-decisions)
+12. [Configuration](#configuration)
+13. [Sample log files](#sample-log-files)
+14. [Running the tests](#running-the-tests)
+15. [Project layout](#project-layout)
+16. [Troubleshooting](#troubleshooting)
+17. [Known limitations](#known-limitations)
 
 ## Features
 
@@ -56,6 +57,196 @@ in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **A client built for scripts as well as people**: automatic retries, a JSON
   output mode, and exit codes that say what went wrong.
 - **279 automated tests**, none of which need a running server.
+
+## System architecture
+
+### Overview
+
+The system is a command-line client and one HTTP service. Inside the service,
+each layer only calls the layer below it. The web layer receives requests, the
+analyzer does the counting, and the store keeps the answers.
+
+```text
+  ┌─────────────────────────────────────────────┐
+  │ Clients                                     │
+  │   client/logscan.py (Part 3)                │
+  │   curl, or a browser on /docs               │
+  └──────────────────────┬──────────────────────┘
+                         │  HTTP + JSON
+                         │  POST, GET, DELETE /api/v1/analyses
+                         ▼
+  ┌─────────────────────────────────────────────┐
+  │ uvicorn: HTTP server on port 8000           │
+  └──────────────────────┬──────────────────────┘
+                         │  ASGI
+                         ▼
+  ┌─────────────────────────────────────────────┐
+  │ Middleware                    app/utils/    │
+  │   request id, access log, metrics           │
+  │   rate limit: 30 requests/min per IP        │
+  ├─────────────────────────────────────────────┤
+  │ API layer (Part 2)            app/api/      │
+  │   POST, GET, DELETE /api/v1/analyses        │
+  │   GET /api/v1/health, GET /metrics          │
+  │   optional API key, 8 upload slots          │
+  ├─────────────────────────────────────────────┤
+  │ Upload reader                 app/services/ │
+  │   streams the body, cuts it into lines      │
+  ├─────────────────────────────────────────────┤
+  │ Analyzer (Part 1)             app/services/ │
+  │   parser: a line → fields, or a reason      │
+  │   analyzer: counts, top offender, samples   │
+  ├─────────────────────────────────────────────┤
+  │ Result store                  app/storage/  │
+  │   the summary, kept for 1 hour              │
+  └──────────────────────┬──────────────────────┘
+```
+
+Settings (`app/config.py`), the error format, logging and metrics are used by
+every layer.
+
+### Components
+
+| Component | Code | Responsibility |
+|---|---|---|
+| Client | [`client/logscan.py`](client/logscan.py) | Checks the file locally, streams it to the API, retries on failure, and prints the summary. It talks to the server only over HTTP and imports nothing from `app/`. |
+| HTTP server | uvicorn | Accepts connections, speaks HTTP, and calls the application through ASGI, the standard interface between Python web servers and apps. |
+| Application | [`app/main.py`](app/main.py) | Builds the FastAPI app at startup: settings, middleware, routes, error handlers, and the objects every request shares (store, slots, rate limiter). Closes them at shutdown. |
+| Middleware | [`app/utils/middleware.py`](app/utils/middleware.py), [`app/utils/rate_limit.py`](app/utils/rate_limit.py) | Wraps every request. It assigns a request id, writes one access log line, records metrics, and turns away clients over the rate limit before any of the body is read. |
+| API | [`app/api/analyses.py`](app/api/analyses.py), [`app/api/health.py`](app/api/health.py), [`app/utils/security.py`](app/utils/security.py), [`app/utils/slots.py`](app/utils/slots.py) | The REST endpoints. Validates input, checks the API key when one is configured, and caps how many uploads are analysed at once. |
+| Upload reader | [`app/services/upload.py`](app/services/upload.py) | Reads the request body as it arrives, enforces the size limit, idle timeout and binary check, and splits the bytes into lines. |
+| Analyzer | [`app/services/parser.py`](app/services/parser.py), [`app/services/analyzer.py`](app/services/analyzer.py) | Parses each line and keeps a counter per service and level, then builds the summary. It contains no web or file code, so it can be used on its own. |
+| Result model | [`app/models/analysis.py`](app/models/analysis.py) | `AnalysisResult`: the JSON shape shared by the API and the client. |
+| Result store | [`app/storage/store.py`](app/storage/store.py) | Keeps each summary for one hour, in memory or in Redis, behind one interface. |
+| Shared utilities | [`app/config.py`](app/config.py), [`app/utils/errors.py`](app/utils/errors.py), [`app/utils/logger.py`](app/utils/logger.py), [`app/utils/metrics.py`](app/utils/metrics.py) | Settings from the environment and `.env`, the single error format, JSON logs, and Prometheus metrics. |
+
+### Request flow
+
+What happens when a file is analysed, from the command to the printed table:
+
+1. **The client** checks that the file exists and is at most 100 MB, then streams
+   it as `multipart/form-data` to `POST /api/v1/analyses`.
+2. **uvicorn** receives the request and calls the FastAPI application.
+3. **The request context middleware** gives the request an id, or keeps the one
+   the client sent in `X-Request-ID`, and starts a timer.
+4. **The rate limit middleware** counts this IP address's requests in the current
+   minute. Over 30 returns `429`.
+5. **FastAPI** routes the request to `create_analysis`, validates the `samples`
+   parameter, and runs the API key check.
+6. **The route takes one of 8 analysis slots.** If none frees up within 5 seconds,
+   it returns `503`.
+7. **The upload reader** reads the body chunk by chunk as it arrives. It rejects
+   a binary file (`415`), a file over 100 MB (`413`) and a stalled upload
+   (`408`), and splits the bytes into lines.
+8. **The analyzer** matches each line against the log format and adds 1 to that
+   service's counter for that level. Lines that do not match are counted as
+   unparseable, and the first 20 are kept with the reason.
+9. **At the end of the file,** the analyzer builds the result: services sorted
+   worst first, the top offender(s), the time range and the metadata. The slot
+   is released.
+10. **The summary is stored** for one hour under a new id. The log itself is
+    discarded.
+11. **The response** is `201 Created`, with a `Location` header and the JSON
+    body. On the way out, the middleware adds `X-Request-ID`, writes one JSON log
+    line and updates the metrics.
+12. **The client** prints the summary table and exits with code 0.
+
+`GET` and `DELETE /api/v1/analyses/{id}` take a shorter path: middleware, route,
+then a lookup or removal in the store. Any failure, at any step, becomes the
+same JSON error body described in [Errors](#errors).
+
+### How a large file stays in constant memory
+
+The upload is never held whole, in memory or on disk. The server keeps at most
+one 256 KB block and one unfinished line at a time:
+
+```text
+ bytes arriving from the network
+        │
+        ▼
+ event loop ───── reads chunks as they arrive (async, so other requests keep being served)
+        │         checks the size limit and the idle timeout
+        │         collects chunks into 256 KB blocks
+        ▼
+ worker thread ── splits each block into lines; an unfinished line waits for the next block
+        │         parses each line and adds 1 to its (service, level) counter
+        │         then the block is thrown away
+        ▼
+ counters per service + the first 20 bad lines      ← the only state kept
+        │
+        ▼
+ AnalysisResult, returned as JSON
+```
+
+Reading from the network is asynchronous: while the server waits for bytes, it
+serves other requests. Parsing is CPU work, so it runs in a worker thread, which
+keeps the event loop free.
+
+### Architectural decisions
+
+- **Layers depend in one direction only.** The analyzer knows nothing about HTTP,
+  and the client knows only the HTTP API, so each part can change or be reused
+  without the others.
+- **Streaming, not buffering.** FastAPI's usual `UploadFile` saves the whole
+  upload before the route runs. The upload reader parses it as it arrives
+  instead, so memory use does not depend on file size.
+- **Cheap checks first.** The rate limit runs before the body is read, and the
+  declared size (`Content-Length`) is checked before the first byte is read, so
+  a rejected request costs almost nothing.
+- **Bounded concurrency.** At most 8 uploads are analysed at once. Extra
+  requests get a clear `503` with `Retry-After` instead of slowing everything
+  down or running out of memory.
+- **Storage behind an interface.** The routes only know "put, get, delete". The
+  in-memory store or Redis is chosen by configuration, with no code change.
+- **One error format.** Every failure, from any layer, returns the same JSON
+  body with a stable `code`.
+- **Traceable requests.** The request id is in every response and every server
+  log line, so a user's error report leads straight to the matching log entry.
+
+### Deployment and scaling
+
+```text
+ Default: uvicorn main:app --port 8000
+
+    ┌───────────────────────────────┐
+    │ uvicorn, 1 process            │
+    │ results and rate limits kept  │
+    │ in the process's own memory   │
+    └───────────────────────────────┘
+
+ Scaled: REDIS_URL set, uvicorn main:app --workers 4
+
+    ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │ worker 1 │  │ worker 2 │  │ worker N │
+    └────┬─────┘  └────┬─────┘  └────┬─────┘
+         └─────────────┼─────────────┘
+                       ▼
+                 ┌───────────┐
+                 │   Redis   │  results + rate-limit counts
+                 └───────────┘
+```
+
+By default the server is one process and needs nothing else installed. To use
+more CPU cores, run several worker processes and set `REDIS_URL`. Each process
+has its own memory, so without Redis a result stored by one worker could not be
+fetched from another. With Redis, the workers keep no state of their own, and
+more can be added, on one machine or behind a load balancer, without changing
+any code.
+
+### Technology stack
+
+| Concern | Choice | Why |
+|---|---|---|
+| Language | Python 3.12 | |
+| Web framework | FastAPI | Validates input and generates the `/docs` page from type hints. |
+| HTTP server | uvicorn | A fast ASGI server. |
+| Data models and settings | Pydantic, pydantic-settings | Typed models that convert to and from JSON; settings read and validated from the environment. |
+| Streaming uploads | streaming-form-data | Parses a multipart upload as it arrives, instead of saving it first. |
+| Async and threads | anyio (installed with FastAPI) | Hands parsing to a worker thread and enforces the upload timeout. |
+| Metrics | prometheus-client | Counters and timings served at `/metrics`. |
+| Shared store (optional) | redis | Results and rate limits shared between worker processes. |
+| Client HTTP | httpx | Streams the file from disk; timeouts and clear connection errors. |
+| Client interface | Typer, Rich | Command-line options from the function's parameters; formatted output. |
 
 ## Requirements
 
@@ -700,7 +891,6 @@ main.py                 lets `uvicorn main:app` run from the project folder
 requirements.txt        dependencies for the server, the client and the tests
 pytest.ini              test settings
 .env.example            every setting, with its default
-ARCHITECTURE.md         how the parts fit together
 ```
 
 ## Troubleshooting
